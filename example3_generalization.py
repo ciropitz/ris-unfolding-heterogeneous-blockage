@@ -160,8 +160,8 @@ def main():
     # ---- (c) mismatch in the number of users -------------------------
     print("\n(c) Mismatch in the number of users")
     rows, base_vals = {}, []
-    for tag, model in [(f"trained M={M_TRAIN_A}", net_a),
-                       (f"trained M={M_TRAIN_B}", net_b)]:
+    for tag, model in [(f"Trained with M={M_TRAIN_A}", net_a),
+                       (f"Trained with M={M_TRAIN_B}", net_b)]:
         vals = []
         for Me in M_EVAL:
             sr, base = evaluate_sum_rate(model, geo_train, Me,
@@ -237,13 +237,13 @@ def plot_users(rows, base_vals, out_png):
     fig, ax = plt.subplots(figsize=(9 / 2.54, 6.5 / 2.54))
     # the two curves nearly coincide, hence the second one is drawn thinner,
     # dashed and with open markers, so that the first remains visible
-    ax.plot(M_EVAL, rows[f"trained M={M_TRAIN_A}"], color="tab:blue",
+    ax.plot(M_EVAL, rows[f"Trained with M={M_TRAIN_A}"], color="tab:blue",
             marker="o", markersize=6, linewidth=2.6,
-            label=f"trained M={M_TRAIN_A}")
-    ax.plot(M_EVAL, rows[f"trained M={M_TRAIN_B}"], color="tab:green",
+            label=f"Trained with $M={M_TRAIN_A}$")
+    ax.plot(M_EVAL, rows[f"Trained with M={M_TRAIN_B}"], color="tab:green",
             marker="D", markersize=3.5, linewidth=1.1, linestyle="--",
             markerfacecolor="none", markeredgewidth=1.1,
-            label=f"trained M={M_TRAIN_B}")
+            label=f"Trained with $M={M_TRAIN_B}$")
     ax.plot(M_EVAL, base_vals, color="0.6", marker="s", linestyle=":",
             linewidth=1.2, markersize=4, label=r"$\theta = 0$")
     ax.set_xlabel("Number of users at inference", fontsize=9, fontfamily="serif")
