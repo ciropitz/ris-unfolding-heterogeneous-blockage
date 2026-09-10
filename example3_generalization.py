@@ -53,8 +53,8 @@ import matplotlib.pyplot as plt
 import scenario as st
 import beamris_unfolding as bu
 
-M_TRAIN_A, M_TRAIN_B = 3, 5              # numbers of users used in training
-M_EVAL = [2, 3, 4, 5, 6]                 # numbers of users used in evaluation
+M_TRAIN_A, M_TRAIN_B = 2, 8              # numbers of users used in training
+M_EVAL = [2, 3, 4, 5, 6, 7, 8]           # numbers of users used in evaluation
 KAPPA_EVAL = [0.0, 5.0, 10.0, 20.0, 30.0, 1000.0]   # Rician factors [dB]
 NOISE_LEVELS = [2e-9, 2e-10, 2e-11, 2e-12, 2e-13, 2e-14, 2e-15, 2e-16]
 POWER_FACTOR = 100.0                     # scaling applied in tests (a) and (b)
@@ -138,7 +138,7 @@ def main():
     pw3 = st.USER_POWER * np.ones(M_TRAIN_A)
     lines = []
 
-    net_a = st.get_model(M=M_TRAIN_A, tag="main", seed=42)
+    net_a = st.get_model(M=M_TRAIN_A, tag=f"M{M_TRAIN_A}", seed=42)
     net_b = st.get_model(M=M_TRAIN_B, tag=f"M{M_TRAIN_B}", seed=43)
 
     # ---- (a) joint scaling -------------------------------------------

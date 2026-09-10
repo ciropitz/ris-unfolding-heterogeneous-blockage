@@ -229,6 +229,7 @@ class BeamRISSumRate(BeamRISBase):
                  ls_iterations=2000,
                  ls_beta=0.5,
                  ls_nu=1e-3,
+                 initial_phase=None,
                  verbose=True):
         """
         Optimize RIS phases for sum-rate maximization.
@@ -245,6 +246,8 @@ class BeamRISSumRate(BeamRISBase):
         ls_iterations     : max line-search iterations
         ls_beta           : line-search contraction factor
         ls_nu             : Armijo sufficient decrease constant
+        initial_phase     : (nreflects,) initial phase vector; defaults to the
+                            all-zero vector when not given
         verbose           : print progress if True
 
         Returns
@@ -266,7 +269,8 @@ class BeamRISSumRate(BeamRISBase):
         mu    = initial_stepsize
         k     = 0
         D     = np.eye(self.nreflects)
-        phase = np.zeros(self.nreflects)
+        phase = (np.zeros(self.nreflects) if initial_phase is None
+                 else np.array(initial_phase, dtype=float))
         grad  = grad_func(phase)
         scale = np.linalg.norm(grad)
 

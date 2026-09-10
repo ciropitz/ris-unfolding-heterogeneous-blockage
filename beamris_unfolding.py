@@ -195,7 +195,14 @@ def compute_anchor(Hc_ua, Hc_ra, Hc_ur, blocked_mask):
     else:
         H0 = compute_all_h(Hc_ua, Hc_ra, Hc_ur, phase0)
         h_sum = H0.sum(dim=1)
-    return -torch.angle(Hc_ra.conj().T @ h_sum)
+    # NOTE: this module uses the phase convention h_m = a_m + C diag(exp(+j
+    # theta)) b_m, the opposite sign of the manuscript/NumPy convention
+    # (Theta^H = diag(exp(-j theta))) in which Eq. (20), theta(0) =
+    # -angle(C^H h_sum), is stated. Reusing that same "-angle" formula here
+    # without flipping the sign for the convention change does not align
+    # the RIS response (it is numerically indistinguishable from theta =
+    # 0); the coherent anchor in this module's convention is +angle(...).
+    return torch.angle(Hc_ra.conj().T @ h_sum)
 
 
 # ===========================================================================

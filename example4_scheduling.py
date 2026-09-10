@@ -5,20 +5,28 @@ Example 4: per-slot scheduling in the RIS-dominated regime.
 
 Under a rank-one RIS-to-BS channel the equivalent channels of the RIS-served
 users are collinear, and fairness cannot be obtained in the spatial domain.
-This script compares two ways of serving the blocked users:
+This script compares three ways of serving the blocked users:
 
   * simultaneous service with rate balancing, in which the RIS response is
     equalized among the served users. The per-user rate then saturates at
     log2(1 + 1/(|B| - 1)), independently of the aperture gain;
 
-  * per-slot scheduling, in which the served set is rotated across scheduling
-    slots in round-robin order and the trained network computes the phase
-    configuration of every slot in a single forward pass, according to
-    Algorithm 2 of the manuscript.
+  * per-slot scheduling with a round-robin policy, in which the served set is
+    rotated across scheduling slots in a fixed order, so that every blocked
+    user receives the same share of slots;
 
-The long-term rates of both strategies are compared, together with the Jain
-fairness index. The LoS-dominated Rician factor is adopted here, since the
-rank-one condition underlying the analysis holds in that regime.
+  * per-slot scheduling with a max-min policy, in which the user served at
+    every slot is the blocked user with the smallest long-term rate
+    accumulated so far. This equalizes the long-term rates, at the cost of an
+    unequal number of slots per user.
+
+Under either policy the trained network computes the phase configuration of
+every slot in a single forward pass, according to Algorithm 2 of the
+manuscript, and only the rule that selects the served set differs.
+
+The long-term rates of the three strategies are compared, together with the
+Jain fairness index. The LoS-dominated Rician factor is adopted here, since
+the rank-one condition underlying the analysis holds in that regime.
 
 Modules (repository root):
     beamris_base.py, beamris_sumrate.py, beamris_unfolding.py,
@@ -79,30 +87,51 @@ def jain_index(rates):
     return float(r.sum() ** 2 / (len(r) * np.sum(r ** 2)))
 
 
+def _serve_one(model, Hc_ua, Hc_ra, Hc_ur, users_power, noise_power, M, idx):
+    """Rates obtained by serving a single user (index idx) in one slot."""
+    served = torch.zeros(M, dtype=torch.bool)
+    served[idx] = True
+    with torch.no_grad():
+        theta_t = model.forward_with_mask(Hc_ua, Hc_ra, Hc_ur, users_power,
+                                          noise_power, served)
+    return bu.per_user_rates_mvdr(Hc_ua, Hc_ra, Hc_ur, theta_t,
+                                  users_power, noise_power)
+
+
 def run_realization(model, Hc_ua, Hc_ra, Hc_ur, users_power, noise_power,
                     blocked, n_slots):
-    """Long-term rates of both strategies over one scheduling window."""
+    """Long-term rates of the three strategies over one scheduling window."""
     M = Hc_ua.shape[1]
     blocked_idx = torch.nonzero(blocked).flatten().tolist()
 
-    # per-slot scheduling with the round-robin policy
+    # per-slot scheduling with the round-robin policy, cycling through the
+    # blocked set in a fixed order
     acc = np.zeros(M)
     for t in range(n_slots):
-        served = torch.zeros(M, dtype=torch.bool)
-        served[blocked_idx[t % len(blocked_idx)]] = True
-        with torch.no_grad():
-            theta_t = model.forward_with_mask(Hc_ua, Hc_ra, Hc_ur, users_power,
-                                              noise_power, served)
-        acc += bu.per_user_rates_mvdr(Hc_ua, Hc_ra, Hc_ur, theta_t,
-                                      users_power, noise_power)
+        idx = blocked_idx[t % len(blocked_idx)]
+        acc += _serve_one(model, Hc_ua, Hc_ra, Hc_ur, users_power, noise_power,
+                          M, idx)
     rates_rr = acc / n_slots
+
+    # per-slot scheduling with a max-min policy: at every slot, the blocked
+    # user with the smallest long-term rate accumulated so far (averaged
+    # over the elapsed slots, zero for a user not yet served) is served,
+    # which reallocates slots away from the fixed round-robin order toward
+    # the users with weaker RIS gains, at the cost of an unequal slot count
+    acc_mm = np.zeros(M)
+    for t in range(n_slots):
+        long_term_avg = acc_mm[blocked_idx] / max(t, 1)
+        idx = blocked_idx[int(np.argmin(long_term_avg))]
+        acc_mm += _serve_one(model, Hc_ua, Hc_ra, Hc_ur, users_power,
+                             noise_power, M, idx)
+    rates_mm = acc_mm / n_slots
 
     # simultaneous service with rate balancing
     theta_bal = balanced_phase(Hc_ua, Hc_ra, Hc_ur, users_power, noise_power,
                                blocked)
     rates_bal = bu.per_user_rates_mvdr(Hc_ua, Hc_ra, Hc_ur, theta_bal,
                                        users_power, noise_power)
-    return rates_rr, rates_bal
+    return rates_rr, rates_mm, rates_bal
 
 
 def main():
@@ -115,21 +144,24 @@ def main():
     users_power = st.USER_POWER * np.ones(st.M_USERS)
     M = st.M_USERS
 
-    rr_all, bal_all = [], []
+    rr_all, mm_all, bal_all = [], [], []
     print("Evaluating the scheduling window over the channel realizations:")
     for r in range(N_REALIZATIONS):
         A, C, B, pw, blocked = bu.generate_heterogeneous_sample(
             geo, M, users_power, st.NOISE_POWER, M)
-        rr, bal = run_realization(model, A, C, B, pw, st.NOISE_POWER,
-                                  blocked, N_SLOTS)
+        rr, mm, bal = run_realization(model, A, C, B, pw, st.NOISE_POWER,
+                                      blocked, N_SLOTS)
         rr_all.append(np.sort(rr)[::-1])
+        mm_all.append(np.sort(mm)[::-1])
         bal_all.append(np.sort(bal)[::-1])
         if (r + 1) % 10 == 0:
             print(f"  {r + 1}/{N_REALIZATIONS}")
 
     rr_all = np.array(rr_all)
+    mm_all = np.array(mm_all)
     bal_all = np.array(bal_all)
     rr_mean = rr_all.mean(axis=0)
+    mm_mean = mm_all.mean(axis=0)
     bal_mean = bal_all.mean(axis=0)
     r_max = np.log2(1 + 1 / (M - 1))
 
@@ -139,28 +171,35 @@ def main():
              "  strategy".ljust(34) + "".join(f"user {i+1}".rjust(10)
                                               for i in range(M)),
              "-" * 70,
-             "  Per-slot scheduling".ljust(34)
+             "  Per-slot scheduling, round-robin".ljust(34)
              + "".join(f"{v:10.3f}" for v in rr_mean),
+             "  Per-slot scheduling, max-min".ljust(34)
+             + "".join(f"{v:10.3f}" for v in mm_mean),
              "  Simultaneous, rate balanced".ljust(34)
              + "".join(f"{v:10.3f}" for v in bal_mean),
              "",
              f"  Collinearity limit r_max             = {r_max:.3f} bps/Hz",
-             f"  Jain index, per-slot scheduling      = "
+             f"  Jain index, round-robin              = "
              f"{np.mean([jain_index(x) for x in rr_all]):.4f}",
+             f"  Jain index, max-min                  = "
+             f"{np.mean([jain_index(x) for x in mm_all]):.4f}",
              f"  Jain index, simultaneous             = "
              f"{np.mean([jain_index(x) for x in bal_all]):.4f}",
-             f"  Average long-term rate, scheduling   = {rr_mean.mean():.3f}",
+             f"  Average long-term rate, round-robin  = {rr_mean.mean():.3f}",
+             f"  Average long-term rate, max-min      = {mm_mean.mean():.3f}",
              f"  Average long-term rate, simultaneous = {bal_mean.mean():.3f}"]
     text = "\n".join(lines)
     print("\n" + text)
     (st.OUT_DIR / "example4_scheduling.txt").write_text(text)
 
     fig, ax = plt.subplots(figsize=(9 / 2.54, 6.5 / 2.54))
-    width = 0.35
+    width = 0.26
     pos = np.arange(M)
-    bars_rr = ax.bar(pos - width / 2, rr_mean, width, color="tab:green",
-                     label="Per-slot scheduling")
-    bars_bal = ax.bar(pos + width / 2, bal_mean, width, color="tab:red",
+    bars_rr = ax.bar(pos - width, rr_mean, width, color="tab:green",
+                     label="Per-slot, round-robin")
+    bars_mm = ax.bar(pos, mm_mean, width, color="tab:blue",
+                     label="Per-slot, max-min")
+    bars_bal = ax.bar(pos + width, bal_mean, width, color="tab:red",
                       label="Simultaneous, rate balanced")
     line_rmax = ax.axhline(r_max, color="black", linestyle="--", linewidth=1.0,
                            label=r"$r_{\max}$")
@@ -170,8 +209,8 @@ def main():
     ax.tick_params(labelsize=8)
     ax.grid(True, axis="y")
     # headroom above the tallest bar, so that the legend does not overlap it
-    ax.set_ylim(0, 1.45 * max(rr_mean.max(), bal_mean.max()))
-    ax.legend(handles=[bars_rr, bars_bal, line_rmax], fontsize=7,
+    ax.set_ylim(0, 1.45 * max(rr_mean.max(), mm_mean.max(), bal_mean.max()))
+    ax.legend(handles=[bars_rr, bars_mm, bars_bal, line_rmax], fontsize=7,
               loc="upper right", prop={"family": "serif", "size": 7})
     fig.tight_layout()
     fig.savefig(st.OUT_DIR / "example4_scheduling.png", dpi=300,

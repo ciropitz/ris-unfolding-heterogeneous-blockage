@@ -15,6 +15,10 @@ user having an obstructed direct link, this script compares:
   * the proposed unfolded network, which produces its phase configuration in
     a single forward pass, shown as a horizontal line.
 
+All the iterative methods are initialized from the same closed-form phase
+anchor used by the unfolded network, so that the comparison reflects the
+effect of the learned layers rather than of the initialization.
+
 Run this script first, since it trains the network reused by the other
 examples.
 
@@ -85,11 +89,16 @@ def main():
     print("User positions (m):\n", np.round(obj.users_pos, 2))
     print("Blocked users:", np.flatnonzero(obj.blocked_mask))
 
+    # All methods, including the iterative benchmarks, are initialized from
+    # the same closed-form anchor used by the proposed network (Eq. (20)),
+    # so that the comparison isolates the effect of the learned layers
+    # rather than of the initialization.
+    anchor = obj.compute_anchor()
     curves = {}
     for name, (alg, direction, _, _) in METHODS.items():
         print(f"  running {name} ...")
         _, _, hist = obj.optimize(algorithm=alg, direction_method=direction,
-                                  **st.LS_KWARGS)
+                                  initial_phase=anchor, **st.LS_KWARGS)
         curves[name] = hist
 
     A, C, B, pw = st.to_torch(obj)
@@ -100,10 +109,10 @@ def main():
     # ------------------------------------------------------------------
     # Numerical summary
     # ------------------------------------------------------------------
-    # the first entry of every history is the sum rate at theta = 0
+    # the first entry of every history is the sum rate at the anchor
     sr_init = curves["std_sd"][0]
     lines = ["Final sum-rate capacity (bps/Hz) and number of iterations", "-" * 60,
-             f"  {'Initialization, theta = 0':38s} {sr_init:8.4f}       0"]
+             f"  {'Initialization, closed-form anchor':38s} {sr_init:8.4f}       0"]
     for name, hist in curves.items():
         lines.append(f"  {LABELS[name]:38s} {hist[-1]:8.4f}   {len(hist):5d}")
     lines.append(f"  {'Proposed network (one forward pass)':38s} "

@@ -170,6 +170,25 @@ class BeamRISSelective(BeamRISSumRate):
             total += alpha_m * np.imag(term1 - term2)
         return (2 / np.log(2)) * np.real(total)
 
+    # -- closed-form phase anchor ----------------------------------------
+    def compute_anchor(self):
+        """
+        Closed-form phase anchor of the proposed network, Eq. (20),
+
+            B nonempty: theta = -angle[C^H C sum_{m in B} b_m],
+            B empty   : theta = -angle[C^H sum_m (a_m + C b_m)],
+
+        evaluated at theta = 0 (Phi = I) from the RIS-only channels, so
+        that both the network and the iterative benchmarks can be
+        initialized from the same closed-form point.
+        """
+        C, B_ = self.Hc_ra, self.Hc_ur
+        if self.blocked_mask.any():
+            h_sum = (C @ B_[:, self.blocked_mask]).sum(axis=1)
+        else:
+            h_sum = (self.Hc_ua + C @ B_).sum(axis=1)
+        return -np.angle(C.conj().T @ h_sum)
+
     # -- optimization loop ----------------------------------------------
     def optimize(self, algorithm='standard', **kwargs):
         if algorithm != 'selective':
@@ -180,10 +199,11 @@ class BeamRISSelective(BeamRISSumRate):
     def _loop(self, cost_f, grad_func, initial_stepsize=1.0, max_iterations=1000,
               tolerance=0.0, direction_method='steepest_descent',
               ls_method='backtracking', ls_iterations=2000, ls_beta=0.5,
-              ls_nu=1e-3, verbose=True):
+              ls_nu=1e-3, initial_phase=None, verbose=True):
         """Same structure as BeamRISSumRate.optimize, parameterized by the cost."""
         D = np.eye(self.nreflects)
-        phase = np.zeros(self.nreflects)
+        phase = (np.zeros(self.nreflects) if initial_phase is None
+                 else np.array(initial_phase, dtype=float))
         grad = grad_func(phase)
         scale = np.linalg.norm(grad)
         history = []

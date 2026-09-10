@@ -13,7 +13,9 @@ All the methods are evaluated on a single set of channel realizations, built
 once with the same generator used by Example 2, so that the results of this
 study and of that example refer to comparable conditions. The exact cost
 function with damped-BFGS directions is included as the reference against
-which every fraction is reported.
+which every fraction is reported, initialized from the same closed-form phase
+anchor used by the unfolded network, so that the comparison reflects the
+effect of the learned layers rather than of the initialization.
 
 Two measurements are produced.
 
@@ -132,6 +134,7 @@ def evaluate_iterative(realizations, noise_power):
         t0 = time.perf_counter()
         _, ph, hist = obj.optimize(algorithm="standard",
                                    direction_method="damped_bfgs",
+                                   initial_phase=obj.compute_anchor(),
                                    **st.LS_KWARGS)
         times.append(time.perf_counter() - t0)
         iters.append(len(hist))

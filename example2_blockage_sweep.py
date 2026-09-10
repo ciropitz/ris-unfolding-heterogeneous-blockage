@@ -13,6 +13,10 @@ the same channels are supplied to all methods, namely:
   * the iterative method with the proposed selective cost function;
   * the proposed unfolded network, evaluated in a single forward pass.
 
+The iterative methods are initialized from the same closed-form phase anchor
+used by the unfolded network, so that the comparison reflects the effect of
+the learned layers rather than of the initialization.
+
 Two performance metrics are reported, the total sum rate and the average rate
 of the blocked users, the latter being where the cost functions differ most.
 The average number of iterations and the average execution time per channel
@@ -90,11 +94,16 @@ def run_sweep(model, geo, M, users_power, noise_power, n_samples, seed=123):
                 st.assert_phase_convention(obj, noise_power)
             A, C, B, pw = st.to_torch(obj)
 
+            # the iterative benchmarks are initialized from the same
+            # closed-form anchor used by the proposed network, so that the
+            # comparison isolates the effect of the learned layers
+            anchor = obj.compute_anchor()
             phases = {"zero": torch.zeros(obj.nreflects, dtype=torch.float64)}
             for name, (alg, direction) in METHODS.items():
                 t0 = time.perf_counter()
                 _, ph, hist = obj.optimize(algorithm=alg,
                                            direction_method=direction,
+                                           initial_phase=anchor,
                                            **st.LS_KWARGS)
                 results[name]["time"].append(time.perf_counter() - t0)
                 results[name]["iters"].append(len(hist))
